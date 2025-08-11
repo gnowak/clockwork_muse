@@ -28,6 +28,7 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Generated outputs (optional — keep if these shouldn’t be versioned)
 outputs/

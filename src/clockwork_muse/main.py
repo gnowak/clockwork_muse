@@ -5,7 +5,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from src.crew import ContentCrew
+from clockwork_muse.crew import ContentCrew
 
 
 def setup_logging(verbose: bool, debug: bool, log_file: str | None) -> None:
