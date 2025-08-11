@@ -7,9 +7,7 @@ import yaml
 from jinja2 import Template
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
-from clockwork_muse.tools.serper_retry import SerperDevToolRobust
-from crewai_tools import ScrapeWebsiteTool
-
+from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 from dotenv import load_dotenv, find_dotenv
 
 
@@ -44,15 +42,15 @@ def _write(path: str, text: str) -> None:
 class ContentCrew:
     def __init__(self) -> None:
         load_dotenv(find_dotenv(usecwd=True), override=False)
+
         # Config (yaml)
         self.agents_cfg = _load_yaml("src/clockwork_muse/config/agents.yaml")
         self.tasks_cfg = _load_yaml("src/clockwork_muse/config/tasks.yaml")
 
         # Tools
-        self.serper = SerperDevToolRobust() if os.getenv("SERPER_API_KEY") else None
+        self.serper = SerperDevTool() if os.getenv("SERPER_API_KEY") else None
         self.scraper = ScrapeWebsiteTool()
 
-        import logging
         LOG = logging.getLogger("clockwork_muse.crew")
 
         LOG.info(

@@ -2,9 +2,11 @@
 from __future__ import annotations
 import os, json, time, requests
 from pathlib import Path
-from typing import Any, Dict, Optional
-from pydantic import ConfigDict, Field, AliasChoices
+from typing import Any, Dict, Optional, ClassVar
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices
+
 from crewai_tools import SerperDevTool
+import re
 
 LOG_DIR = Path("logs/tools"); LOG_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_EXCLUDE_TERMS = [
@@ -14,6 +16,21 @@ DEFAULT_EXCLUDE_TERMS = [
 DEFAULT_EXCLUDE_DOMAINS = [
     "pinterest.com", "x.com", "twitter.com"
 ]
+
+def _env_float(key, default): 
+    v=os.getenv(key); 
+    if v is None: return default
+    m=re.search(r'[-+]?\d*\.?\d+', v); return float(m.group(0)) if m else default
+def _env_int(key, default):
+    v=os.getenv(key); 
+    if v is None: return default
+    m=re.search(r'[-+]?\d+', v); return int(m.group(0)) if m else default
+
+def model_post_init(self, _):
+    ...
+    object.__setattr__(self, "timeout", _env_float("SERPER_TIMEOUT", self.timeout))
+    object.__setattr__(self, "retries", _env_int("SERPER_RETRIES", self.retries))
+    object.__setattr__(self, "backoff", _env_float("SERPER_BACKOFF", self.backoff))
 
 def _build_filtered_query(q: str) -> str:
     # allow overrides via env, comma-separated
@@ -51,9 +68,7 @@ class SerperDevToolRobust(SerperDevTool):
         "Serper search with retries/backoff and logging. "
         "Input arg: `search_query` (aliases: `query`, `q`)."
     )
-
-    # Tell CrewAI/LangChain to validate against our schema (not the base one)
-    args_schema = SerperRobustSchema
+    args_schema: ClassVar[type[BaseModel]] = SerperRobustSchema
 
     # Pydantic-safe fields
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -122,18 +137,10 @@ class SerperDevToolRobust(SerperDevTool):
             return str(obj)
 
     # ---------------- CrewAI entrypoint ----------------
-    def _run(self, search_query: str, **kwargs) -> str:
-        # Be forgiving: check common keys in case the runner bypasses validation aliases
-        q = (
-            search_query
-            or kwargs.get("search_query")
-            or kwargs.get("query")
-            or kwargs.get("q")
-        )
-        if not q or not isinstance(q, str):
-            raise ValueError("Serper tool requires `search_query` (aliases: `query`, `q`).")
+    def _run(self, search_query: str, **_kwargs) -> str:
+        q = search_query.strip()
+        payload = self._normalize(q)
 
-        payload = self._normalize(q)  # turns string into {"q": q, "num": 5}
         t0 = time.perf_counter()
         try:
             data = self._http(payload)
