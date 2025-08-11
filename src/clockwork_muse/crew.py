@@ -1,22 +1,18 @@
-# src/crew.py
+# src/clockwork_muse/crew.py
 import os
-import time
 import logging
-import yaml
-
 from datetime import datetime
 from pathlib import Path
-
-#Logging
-from clockwork_muse.logging_llm import LoggingLLM
-from clockwork_muse.tools.logging_wrappers import SerperDevToolLogged, ScrapeWebsiteToolLogged
-
+import yaml
 from jinja2 import Template
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
+from crewai_tools import ScrapeWebsiteTool
+from clockwork_muse.tools.serper_retry import SerperDevToolRobust
+
 
 LOG = logging.getLogger("clockwork_muse.crew")
-MAX_CONTEXT_CHARS = 12000  # keep prompts manageable
+MAX_CONTEXT_CHARS = 12000
 
 
 def _load_yaml(path: str) -> dict:
@@ -24,148 +20,85 @@ def _load_yaml(path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def _render(template: str, ctx: dict) -> str:
-    if not isinstance(template, str):
-        return template
+def _render(s: str, ctx: dict) -> str:
     try:
-        return Template(template).render(**ctx)
+        return Template(s).render(**ctx)
     except Exception:
-        return template
+        return s
 
 
 def _read(path: str) -> str:
     p = Path(path)
     if not p.exists():
         return ""
-    txt = p.read_text(encoding="utf-8", errors="ignore")
-    return txt[:MAX_CONTEXT_CHARS]
+    return p.read_text(encoding="utf-8", errors="ignore")[:MAX_CONTEXT_CHARS]
 
 
 def _write(path: str, text: str) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    p = Path(path); p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
 
 
 class ContentCrew:
-    def __init__(self):
+    def __init__(self) -> None:
         load_dotenv()
+        # Config (yaml)
         self.agents_cfg = _load_yaml("src/clockwork_muse/config/agents.yaml")
         self.tasks_cfg = _load_yaml("src/clockwork_muse/config/tasks.yaml")
 
-        # Tools (use logged subclasses directly — no extra wrapper)
-        self.serper = SerperDevToolLogged() if os.getenv("SERPER_API_KEY") else None
-        self.scraper = ScrapeWebsiteToolLogged()
+        # Tools
+        self.serper = SerperDevToolRobust() if os.getenv("SERPER_API_KEY") else None
+        self.scraper = ScrapeWebsiteTool()
 
         # Models (allow overrides per role)
         self.model = os.getenv("MODEL", "qwen2.5:7b-instruct")
         self.writer_model = os.getenv("WRITER_MODEL", self.model)
 
-        # Prompt tracing toggle (you’re referencing this in _mk_task)
+        # Prompt tracing toggle
         self.trace_prompts = str(os.getenv("TRACE_PROMPTS", "0")).lower() in ("1", "true", "yes")
-
-        # LLM log toggles (envs)
-        base = os.getenv("OPENAI_API_BASE", "http://localhost:11434/v1")
-        key  = os.getenv("OPENAI_API_KEY", "ollama")
-        log_json = os.getenv("LOG_LLM_JSON", "0").lower() in ("1","true","yes")
-        echo = os.getenv("LOG_LLM_ECHO", "0").lower() in ("1","true","yes")
-        timeout = float(os.getenv("LLM_TIMEOUT", "1200"))  # 20 min default
-
-        self.llm_default = LoggingLLM(
-            model=self.model, base_url=base, api_key=key,
-            timeout=timeout, log_json=log_json, echo_to_console=echo
-        )
-        self.llm_writer = LoggingLLM(
-            model=self.writer_model, base_url=base, api_key=key,
-            timeout=timeout, log_json=log_json, echo_to_console=echo
-        )
-
 
     def _with_model(self, cfg: dict, model: str) -> dict:
         c = dict(cfg)
         c.setdefault("model", model)
-        # Allow long-running steps to cook if you’ve wired a custom LLM w/ long timeout
-        if "max_execution_time" not in c:
-            c["max_execution_time"] = 3600
-        if "max_iter" not in c:
-            c["max_iter"] = 1
+        c.setdefault("max_execution_time", 3600)
+        c.setdefault("max_iter", 1)
         return c
 
-    def _mk_task(self, key: str, agent: Agent, inputs: dict, extra_context: str = "") -> Task:
+    def _task(self, key: str, agent: Agent, inputs: dict, extra_context: str = "") -> Task:
         cfg = self.tasks_cfg[key]
         desc = _render(cfg["description"], inputs)
         exp = _render(cfg.get("expected_output", ""), inputs)
         if extra_context:
             desc = f"{desc}\n\nContext:\n{extra_context}"
-        LOG.info(
-            "Prepared task=%s -> output_file=%s (desc=%d chars, ctx=%d chars)",
-            key, cfg.get("output_file"), len(desc), len(extra_context)
-        )
         if self.trace_prompts:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             _write(f"logs/prompts/{stamp}-{key}-desc.md", desc)
-        return Task(
-            description=desc,
-            expected_output=exp,
-            agent=agent,
-            output_file=cfg.get("output_file"),
-        )
+        return Task(description=desc, expected_output=exp, agent=agent, output_file=cfg.get("output_file"))
 
     def build(self, inputs: dict, stage: str = "all") -> Crew:
-        LOG.info(
-            "Building crew stage=%s topics=%s channels=%s",
-            stage, inputs.get("topics"), inputs.get("channels")
-        )
-        LOG.info("Models: default=%s, writer=%s", self.model, self.writer_model)
-        LOG.info("Tools: serper=%s, scraper=%s", bool(self.serper), bool(self.scraper))
-
         # Agents
-        trendhunter = Agent(**self._with_model(self.agents_cfg["trendhunter"], self.model), llm=self.llm_default)
+        trendhunter = Agent(**self._with_model(self.agents_cfg["trendhunter"], self.model))
         researcher  = Agent(**self._with_model(self.agents_cfg["researcher"],  self.model),
-                            tools=[t for t in (self.serper, self.scraper) if t],
-                            llm=self.llm_default)
-        writer      = Agent(**self._with_model(self.agents_cfg["writer"],      self.writer_model),
-                            llm=self.llm_writer)
-        editor      = Agent(**self._with_model(self.agents_cfg["editor"],      self.writer_model),
-                            llm=self.llm_writer)
+                            tools=[t for t in (self.serper, self.scraper) if t])
+        writer      = Agent(**self._with_model(self.agents_cfg["writer"],      self.writer_model))
+        editor      = Agent(**self._with_model(self.agents_cfg["editor"],      self.writer_model))
 
         tasks = []
         plan = []
-
         if stage in ("all", "research"):
-            tasks.append(self._mk_task("trend_scan", trendhunter, inputs))
-            plan.append("trend_scan")
-            tasks.append(self._mk_task("web_research", researcher, inputs))
-            plan.append("web_research")
-
+            tasks.append(self._task("trend_scan", trendhunter, inputs)); plan.append("trend_scan")
+            tasks.append(self._task("web_research", researcher, inputs)); plan.append("web_research")
         if stage in ("all", "outline"):
             research_md = _read("outputs/research.md")
-            tasks.append(self._mk_task("outline", writer, inputs, extra_context=research_md))
-            plan.append("outline")
-
+            tasks.append(self._task("outline", writer, inputs, extra_context=research_md)); plan.append("outline")
         if stage in ("all", "script"):
-            # Provide both outline + research if available
-            ctx = _read("outputs/outline.md")
-            if not ctx:
-                ctx = _read("outputs/research.md")
-            else:
-                ctx = f"Outline:\n{ctx}\n\nSources:\n{_read('outputs/research.md')}"
-            tasks.append(self._mk_task("script", writer, inputs, extra_context=ctx))
-            plan.append("script")
-
+            ctx = _read("outputs/outline.md") or _read("outputs/research.md")
+            if _read("outputs/outline.md"):
+                ctx = f"Outline:\n{_read('outputs/outline.md')}\n\nSources:\n{_read('outputs/research.md')}"
+            tasks.append(self._task("script", writer, inputs, extra_context=ctx)); plan.append("script")
         if stage in ("all", "edit"):
-            script_md = _read("outputs/script.md")
-            if not script_md:
-                script_md = _read("outputs/outline.md")
-            tasks.append(self._mk_task("edit_pass", editor, inputs, extra_context=script_md))
-            plan.append("edit_pass")
+            script_md = _read("outputs/script.md") or _read("outputs/outline.md")
+            tasks.append(self._task("edit_pass", editor, inputs, extra_context=script_md)); plan.append("edit_pass")
 
         LOG.info("Task plan: %s", plan)
-
-        crew = Crew(
-            agents=[trendhunter, researcher, writer, editor],
-            tasks=tasks,
-            process=Process.sequential,
-            verbose=True,
-        )
-        return crew
+        return Crew(agents=[trendhunter, researcher, writer, editor], tasks=tasks, process=Process.sequential, verbose=True)
