@@ -1,0 +1,51 @@
+tools:
+  - name: SerperTool
+    description: Uses the Serper.dev API to perform Google-like web searches for trending topics and articles.
+    class_name: SerperTool
+    args:
+      api_key: "{{ SERPER_API_KEY }}"
+
+  - name: YouTubeTrendsTool
+    description: Pulls trending videos from YouTube by region or category using the YouTube Data API.
+    class_name: YouTubeTrendsTool
+    args:
+      api_key: "{{ YOUTUBE_API_KEY }}"
+
+  - name: RequestsScraper
+    description: Lightweight HTML scraper using requests and BeautifulSoup.
+    class_name: RequestsScraper
+
+  - name: SeleniumScraper
+    description: Headless browser scraper for dynamic content requiring JavaScript rendering.
+    class_name: SeleniumScraper
+    args:
+      headless: true
+
+  - name: SpiderScraper
+    description: Uses the Spider Scraper API for heavy-duty, JS-rendered, or protected pages.
+    class_name: SpiderScraper
+    args:
+      api_key: "{{ SPIDER_API_KEY }}"
+
+  - name: LLMWriter
+    description: Uses an LLM to generate an engaging YouTube script from research content.
+    class_name: LLMWriter
+    args:
+      model: "ollama/gpt-oss:20b"  # Or your local LLM if using Ollama, etc.
+
+  - name: LLMEditor
+    description: Polishes and edits raw script output using consistent tone and voice.
+    class_name: LLMEditor
+    args:
+      model: "ollama/gpt-oss:20b"  # Replace as needed
+
+  - name: MarkdownExporter
+    description: Formats the script and metadata into a clean Markdown file.
+    class_name: MarkdownExporter
+
+  - name: NotionExporter
+    description: Sends finalized content to Notion for manual review or scheduling.
+    class_name: NotionExporter
+    args:
+      api_key: "{{ NOTION_API_KEY }}"
+      database_id: "{{ NOTION_DATABASE_ID }}"

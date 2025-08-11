@@ -1,0 +1,33 @@
+# Python venvs
+.venv/
+.venv*/
+venv/
+env/
+
+# Caches & build
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Generated outputs (optional — keep if these shouldn’t be versioned)
+outputs/

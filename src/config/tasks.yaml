@@ -1,0 +1,48 @@
+trend_scan:
+  description: >-
+    Analyze public interest signals and propose 5 promising subtopics per topic in {{ topics | join(', ') }}
+    with a one-sentence rationale each, noting recency or evergreen appeal. Output a single consolidated
+    list (max 300 words). Avoid speculation; rely on observable signals.
+  expected_output: >-
+    Markdown section titled "Proposed Angles" with 5–15 bullet points across all topics, each with a
+    short rationale.
+  agent: trendhunter
+  output_file: outputs/research.md
+
+web_research:
+  description: >-
+    For each shortlisted angle from "Proposed Angles", gather 3–6 recent, credible sources (mix official
+    docs, reputable news, and data sources). Include the exact title, publisher, and publication date. Prefer
+    items from the last 12 months where applicable.
+  expected_output: >-
+    Markdown titled "Sources" with nested bullets per angle, each link annotated with date and 1-line summary.
+  agent: researcher
+  output_file: outputs/research.md
+
+outline:
+  description: >-
+    Create a concise outline suitable for {{ channels | join(', ') }}. Use a strong hook, 3–5 core beats,
+    and a crisp close. Keep total read time under 35 seconds for short-form.
+  expected_output: >-
+    Markdown titled "Outline" with Hook, Beats (3–5 bullets), Close.
+  agent: writer
+  output_file: outputs/outline.md
+
+script:
+  description: >-
+    Expand the outline into a 120–160 word script, optimized for {{ channels | join(', ') }}, punchy sentences,
+    and natural cadence. Do not invent facts. Cite bracketed reference numbers [1], [2], … tied to the
+    "Sources" section where relevant.
+  expected_output: >-
+    Final script in Markdown under "Script (v1)" with bracketed references mapped to the earlier Sources.
+  agent: writer
+  output_file: outputs/script.md
+
+edit_pass:
+  description: >-
+    Tighten the script for clarity and pacing, fix hedging, unify tone, and ensure all bracketed references map
+    to existing sources. Keep within 160 words.
+  expected_output: >-
+    Polished script under "Script (final)" in Markdown.
+  agent: editor
+  output_file: outputs/script.md
