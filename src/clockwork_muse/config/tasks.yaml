@@ -7,19 +7,29 @@ trend_scan:
     Markdown section titled "Proposed Angles" with 5–15 bullet points across all topics, each with a
     short rationale.
   agent: trendhunter
-  output_file: outputs/{{ (topic | default(topics[0])) | lower | replace(' ', '_') }}/trends.md
+  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/trends.md
 
 web_research:
   description: >-
-    First, decide if {{ topic | default(topics[0]) }} implies a list (e.g., ‘top/best/recommended’) or tips. 
-    If list: gather 6–10 contenders with title, author, year, 1-line rationale, and 1–2 solid sources each. 
-    If tips: Find recent, *practical tips* for {{ topics | join(', ') }}.
-    EXCLUDE virtual/360/VR tours, commercials, trailers, or vendor promos. Prefer sources within 12 months.
-    If a result looks like a tour or promo, discard it and search again with -("virtual tour" OR 360 OR VR) filters..
+    You MUST use the tools. First, call the Serper search tool with `search_query` built from:
+      "{{ topic | default(topics[0]) }} (tips OR guide OR how to OR best OR top)"
+      Exclude obvious junk: -("virtual tour" OR 360 OR VR OR promo) -site:pinterest.com -site:x.com
+      Then, for each candidate link (max 2 per domain), call the ScrapeWebsite tool to fetch the page
+      and extract: page_title, site_name (domain), and publication_date from meta tags
+      (article:published_time, og:updated_time, or visible date). If scraping fails, skip that link.
+      DO NOT invent URLs or dates. If Serper returns nothing usable, output "NO_SOURCES_FOUND".
+
+      Finally, output ONLY a fenced JSON block with this schema:
+      {
+        "topic": "{{ topic | default(topics[0]) }}",
+        "sources": [
+          {"title":"...", "url":"...", "site":"...", "date":"YYYY-MM-DD or null", "summary":"..."}
+        ]
+      }
   expected_output: >-
-    "Sources" section with 4–8 links; each has title, publisher, date (YYYY-MM-DD), and a 1-line summary.
+    A single fenced JSON block (no prose) matching the schema above, 4–8 sources total, max 2 per domain.
   agent: researcher
-  output_file: outputs/{{ (topic | default(topics[0])) | lower | replace(' ', '_') }}/research.md
+  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/research.md
 
 outline:
   description: >-
@@ -32,7 +42,7 @@ outline:
     - …
     Close:
   agent: writer
-  output_file: outputs/{{ (topic | default(topics[0])) | lower | replace(' ', '_') }}/outline.md
+  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/outline.md
 
 script:
   description: >-
@@ -48,7 +58,7 @@ script:
     - Close (1 sentence)
     Do not introduce tours or vendors. Only claim what the Sources support.
   agent: writer
-  output_file: outputs/{{ (topic | default(topics[0])) | lower | replace(' ', '_') }}/script.md
+  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/script.md
 
 edit_pass:
   description: >-
@@ -57,4 +67,4 @@ edit_pass:
   expected_output: >-
     Polished script under "Script (final)" in Markdown.
   agent: editor
-  output_file: outputs/{{ (topic | default(topics[0])) | lower | replace(' ', '_') }}/script.md
+  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/script.md
