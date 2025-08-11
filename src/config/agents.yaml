@@ -5,6 +5,8 @@ researcher:
   backstory: >-
     You are an efficient, source-driven researcher. You verify claims, prefer primary sources,
     and keep concise notes with links and publication dates.
+  max_execution_time: 3600   # seconds
+  max_iter: 1                # avoid agent looping
   verbose: true
   allow_delegation: false
 
@@ -14,6 +16,8 @@ writer:
     Turn the research into a tight outline and a short-form script tailored to channels: {{ channels | join(', ') }}.
   backstory: >-
     You craft clear, scannable scripts with hooks up front and strong calls-to-action when appropriate.
+  max_execution_time: 3600   # seconds
+  max_iter: 1                # avoid agent looping
   verbose: true
   allow_delegation: false
 
@@ -21,6 +25,8 @@ editor:
   role: Editor
   goal: Polish for brevity, clarity, and tone consistency. Ensure accurate attributions.
   backstory: Senior editor who fixes flow, trims fluff, and flags unsubstantiated claims.
+  max_execution_time: 3600   # seconds
+  max_iter: 1                # avoid agent looping
   verbose: false
   allow_delegation: false
 
@@ -28,5 +34,7 @@ trendhunter:
   role: Trend Hunter
   goal: Identify subtopics with sustained or rising interest related to {{ topics | join(', ') }}.
   backstory: Strategist who proposes a shortlist of angles likely to perform on {{ channels | join(', ') }}.
+  max_execution_time: 3600   # seconds
+  max_iter: 1                # avoid agent looping
   verbose: true
   allow_delegation: false
