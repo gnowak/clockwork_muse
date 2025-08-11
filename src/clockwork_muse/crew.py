@@ -8,13 +8,12 @@ from datetime import datetime
 from pathlib import Path
 
 #Logging
-from src.logging_llm import LoggingLLM
-from src.tools.logging_wrappers import SerperDevToolLogged, ScrapeWebsiteToolLogged
+from clockwork_muse.logging_llm import LoggingLLM
+from clockwork_muse.tools.logging_wrappers import SerperDevToolLogged, ScrapeWebsiteToolLogged
 
 from jinja2 import Template
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
 LOG = logging.getLogger("clockwork_muse.crew")
 MAX_CONTEXT_CHARS = 12000  # keep prompts manageable
@@ -51,21 +50,19 @@ def _write(path: str, text: str) -> None:
 class ContentCrew:
     def __init__(self):
         load_dotenv()
-        self.agents_cfg = _load_yaml("src/config/agents.yaml")
-        self.tasks_cfg = _load_yaml("src/config/tasks.yaml")
+        self.agents_cfg = _load_yaml("src/clockwork_muse/config/agents.yaml")
+        self.tasks_cfg = _load_yaml("src/clockwork_muse/config/tasks.yaml")
 
-        # Tools
+        # Tools (use logged subclasses directly — no extra wrapper)
         self.serper = SerperDevToolLogged() if os.getenv("SERPER_API_KEY") else None
         self.scraper = ScrapeWebsiteToolLogged()
-        # Wrap with BaseTool-compatible logger
-        if self.serper:
-            self.serper = LoggingTool(name="serper", description="Serper logger", tool=self.serper)
-        if self.scraper:
-            self.scraper = LoggingTool(name="scraper", description="Scraper logger", tool=self.scraper)
 
         # Models (allow overrides per role)
         self.model = os.getenv("MODEL", "qwen2.5:7b-instruct")
         self.writer_model = os.getenv("WRITER_MODEL", self.model)
+
+        # Prompt tracing toggle (you’re referencing this in _mk_task)
+        self.trace_prompts = str(os.getenv("TRACE_PROMPTS", "0")).lower() in ("1", "true", "yes")
 
         # LLM log toggles (envs)
         base = os.getenv("OPENAI_API_BASE", "http://localhost:11434/v1")
@@ -82,6 +79,7 @@ class ContentCrew:
             model=self.writer_model, base_url=base, api_key=key,
             timeout=timeout, log_json=log_json, echo_to_console=echo
         )
+
 
     def _with_model(self, cfg: dict, model: str) -> dict:
         c = dict(cfg)
