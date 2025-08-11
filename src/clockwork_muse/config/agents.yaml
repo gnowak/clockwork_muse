@@ -4,7 +4,7 @@ researcher:
     Find recent, reliable information and sources for the topics: {{ topics | join(', ') }}.
   backstory: >-
     You are an efficient, source-driven researcher. You verify claims, prefer primary sources,
-    and keep concise notes with links and publication dates.
+    and keep concise notes with links and publication dates. When calling serper_robust, pass the query as search_query and prefer “tips/guide/how to” phrasing.
   max_execution_time: 3600   # seconds
   max_iter: 1                # avoid agent looping
   verbose: true

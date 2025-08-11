@@ -3,47 +3,79 @@ from __future__ import annotations
 import os, json, time, requests
 from pathlib import Path
 from typing import Any, Dict, Optional
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, AliasChoices
 from crewai_tools import SerperDevTool
 
 LOG_DIR = Path("logs/tools"); LOG_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_EXCLUDE_TERMS = [
+    "virtual tour", "360", "vr", "promo", "advertisement",
+    "trailer", "4k", "walkthrough", "pov", "ride pov"
+]
+DEFAULT_EXCLUDE_DOMAINS = [
+    "pinterest.com", "x.com", "twitter.com"
+]
+
+def _build_filtered_query(q: str) -> str:
+    # allow overrides via env, comma-separated
+    extra_terms = [t.strip() for t in os.getenv("SEARCH_EXCLUDE_TERMS", "").split(",") if t.strip()]
+    extra_domains = [d.strip() for d in os.getenv("SEARCH_EXCLUDE_DOMAINS", "").split(",") if d.strip()]
+
+    excludes = DEFAULT_EXCLUDE_TERMS + extra_terms
+    exclude_domains = DEFAULT_EXCLUDE_DOMAINS + extra_domains
+
+    parts = [q]
+    # prefer “tips/guide/how to” intent if not already there
+    if not any(k in q.lower() for k in ("tip", "guide", "how to", "mistakes", "things to know")):
+        parts.append('(tips OR guide OR "how to")')
+    for t in excludes:
+        parts.append(f'-"{t}"')
+    for d in exclude_domains:
+        parts.append(f"-site:{d}")
+    return " ".join(parts)
+
+
+class SerperRobustSchema(BaseModel):
+    # Accept search_query, query, or q
+    search_query: str = Field(
+        ...,
+        description="Search query string",
+        validation_alias=AliasChoices("search_query", "query", "q"),
+    )
 
 class SerperDevToolRobust(SerperDevTool):
     """Serper tool with explicit timeouts, retries, and file logging.
-    Pydantic‑safe: all attributes are declared as fields to avoid
-    "object has no field" errors.
-    Accepts either a string (query) or a dict payload compatible with Serper.
+    Accepts search_query/query/q as the input field.
     """
-    # BaseTool/Pydantic model fields
     name: str = "serper_robust"
-    description: str = "Serper search with retries/backoff and logging"
+    description: str = (
+        "Serper search with retries/backoff and logging. "
+        "Input arg: `search_query` (aliases: `query`, `q`)."
+    )
 
-    # NEW: declare these as fields so Pydantic allows them
-    api_key: Optional[str] = Field(default=None, description="Serper API key")
+    # Tell CrewAI/LangChain to validate against our schema (not the base one)
+    args_schema = SerperRobustSchema
+
+    # Pydantic-safe fields
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    api_key: str | None = Field(default=None, description="Serper API key")
     timeout: float = Field(default=30.0, description="Per-call timeout in seconds")
     retries: int = Field(default=3, description="Number of attempts per request")
     backoff: float = Field(default=1.5, description="Backoff multiplier between retries")
     endpoint: str = Field(default="https://google.serper.dev/search", description="Serper endpoint")
 
-    # allow our extra fields even if parent forbids extras
-    model_config = ConfigDict(extra="allow")
-
-    def model_post_init(self, __context):  # pydantic v2 hook, runs after validation
-        # Pull from env if missing (do not mutate unknown attributes)
+    def model_post_init(self, __context):
+        # Fill from env if not provided
         if not self.api_key:
             env_key = os.getenv("SERPER_API_KEY")
             if env_key:
                 object.__setattr__(self, "api_key", env_key)
-        # Fill tunables from env if present
-        t = os.getenv("SERPER_TIMEOUT");   
-        r = os.getenv("SERPER_RETRIES");   
-        b = os.getenv("SERPER_BACKOFF");   
-        e = os.getenv("SERPER_ENDPOINT")
+        t = os.getenv("SERPER_TIMEOUT");   r = os.getenv("SERPER_RETRIES")
+        b = os.getenv("SERPER_BACKOFF");  e = os.getenv("SERPER_ENDPOINT")
         if t: object.__setattr__(self, "timeout", float(t))
         if r: object.__setattr__(self, "retries", int(r))
         if b: object.__setattr__(self, "backoff", float(b))
         if e: object.__setattr__(self, "endpoint", e.strip())
-        # Final guard
         if not self.api_key:
             raise RuntimeError("SERPER_API_KEY is not set")
 
@@ -76,7 +108,7 @@ class SerperDevToolRobust(SerperDevTool):
     def _normalize(self, params: Any) -> Dict[str, Any]:
         # Allow run({"q": "..."}) or run("...")
         if isinstance(params, str):
-            return {"q": params, "num": 5}
+            return {"q": _build_filtered_query(params), "num": 5, "tbs": "qdr:y"}
         if isinstance(params, dict):
             p = {k: v for k, v in params.items()}
             p.setdefault("num", 5)
@@ -90,24 +122,25 @@ class SerperDevToolRobust(SerperDevTool):
             return str(obj)
 
     # ---------------- CrewAI entrypoint ----------------
-    # CrewAI calls .run() -> _run()
-    def _run(self, *args, **kwargs) -> str:
-        params = None
-        if args and not kwargs:
-            params = args[0]
-        elif kwargs:
-            params = kwargs
-        else:
-            raise ValueError("Serper tool requires a query")
+    def _run(self, search_query: str, **kwargs) -> str:
+        # Be forgiving: check common keys in case the runner bypasses validation aliases
+        q = (
+            search_query
+            or kwargs.get("search_query")
+            or kwargs.get("query")
+            or kwargs.get("q")
+        )
+        if not q or not isinstance(q, str):
+            raise ValueError("Serper tool requires `search_query` (aliases: `query`, `q`).")
 
-        payload = self._normalize(params)
+        payload = self._normalize(q)  # turns string into {"q": q, "num": 5}
         t0 = time.perf_counter()
         try:
             data = self._http(payload)
             dt = time.perf_counter() - t0
-            # Log inputs/outputs (truncated)
-            self._log(f"\n=== serper_robust ({dt:.2f}s) ===\nIN : {self._pretty(payload)}\nOUT: {self._pretty(data)[:2000]}\n")
-            # Return compact markdown the agents can consume
+            self._log(
+                f"\n=== serper_robust ({dt:.2f}s) ===\nIN : {self._pretty(payload)}\nOUT: {self._pretty(data)[:2000]}\n"
+            )
             items = data.get("organic", []) or data.get("results", [])
             lines = []
             for it in items[: payload.get("num", 5)]:
@@ -119,5 +152,7 @@ class SerperDevToolRobust(SerperDevTool):
             return "\n".join(lines) or json.dumps(data)
         except Exception as e:
             dt = time.perf_counter() - t0
-            self._log(f"\n=== serper_robust ERROR ({dt:.2f}s) ===\nIN : {self._pretty(payload)}\nERR: {e}\n")
+            self._log(
+                f"\n=== serper_robust ERROR ({dt:.2f}s) ===\nIN : {self._pretty(payload)}\nERR: {e}\n"
+            )
             raise

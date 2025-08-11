@@ -11,30 +11,35 @@ trend_scan:
 
 web_research:
   description: >-
-    For each shortlisted angle from "Proposed Angles", gather 3–6 recent, credible sources (mix official
-    docs, reputable news, and data sources). Include the exact title, publisher, and publication date. Prefer
-    items from the last 12 months where applicable.
+    Find recent, *practical visitor tips* for Disneyland Paris (planning, timing, lines, budgets, food).
+    EXCLUDE virtual/360/VR tours, commercials, trailers, or vendor promos. Prefer sources within 12 months.
+    If a result looks like a tour or promo, discard it and search again with -("virtual tour" OR 360 OR VR) filters.
   expected_output: >-
-    Markdown titled "Sources" with nested bullets per angle, each link annotated with date and 1-line summary.
+    "Sources" section with 4–8 links; each has title, publisher, date (YYYY-MM-DD), and a 1-line tip summary.
   agent: researcher
   output_file: outputs/research.md
 
 outline:
   description: >-
-    Create a concise outline suitable for {{ channels | join(', ') }}. Use a strong hook, 3–5 core beats,
-    and a crisp close. Keep total read time under 35 seconds for short-form.
+    From the Sources, pick ONE clear angle (“First-timer mistakes”, “Save time on lines”, etc.).
+    Output Hook + 3–5 Beats + Close. No tours/promos. Keep total under 35s.
   expected_output: >-
-    Markdown titled "Outline" with Hook, Beats (3–5 bullets), Close.
+    ## Outline
+    Hook:
+    Beats:
+    - …
+    Close:
   agent: writer
   output_file: outputs/outline.md
 
 script:
   description: >-
-    Expand the outline into a 120–160 word script, optimized for {{ channels | join(', ') }}, punchy sentences,
-    and natural cadence. Do not invent facts. Cite bracketed reference numbers [1], [2], … tied to the
-    "Sources" section where relevant.
-  expected_output: >-
-    Final script in Markdown under "Script (v1)" with bracketed references mapped to the earlier Sources.
+    Turn the Outline into a 120–160 word script for {{ channels | join(', ') }}.
+    Use this structure strictly:
+    - Hook (1 sentence)
+    - Tip 1–5 (imperative voice, ~15–20 words each), map [1],[2]… to Sources
+    - Close (1 sentence)
+    Do not introduce tours or vendors. Only claim what the Sources support.
   agent: writer
   output_file: outputs/script.md
 
