@@ -7,6 +7,9 @@ from dotenv import load_dotenv, find_dotenv
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
+import logging
+LOG = logging.getLogger("clockwork_muse.crew")
+
 CFG_AGENTS = "src/clockwork_muse/config/agents.yaml"
 CFG_TASKS  = "src/clockwork_muse/config/tasks.yaml"
 
@@ -25,17 +28,26 @@ def _render(s: str, ctx: dict) -> str:
 class ContentCrew:
     def __init__(self):
         load_dotenv(find_dotenv(usecwd=True), override=False)
+
         self.agents_cfg = _load_yaml(CFG_AGENTS)
         self.tasks_cfg  = _load_yaml(CFG_TASKS)
         # Tools for researcher
         self.serper  = SerperDevTool() if os.getenv("SERPER_API_KEY") else None
         self.scraper = ScrapeWebsiteTool()
+        # after self.serper/self.scraper are set:
+        LOG.warning(
+            "Tools wired: serper=%s scraper=%s | key=%s",
+            type(self.serper).__name__ if self.serper else None,
+            type(self.scraper).__name__ if self.scraper else None,
+            bool(os.getenv("SERPER_API_KEY"))
+)
 
     def _make_agent(self, key: str) -> Agent:
         cfg = self.agents_cfg[key]
         tools = None
         if key == "researcher":
             tools = [t for t in (self.serper, self.scraper) if t]
+            LOG.warning("Researcher attached tools: %s", [getattr(t, "name", t.__class__.__name__) for t in tools])
         return Agent(config=cfg, tools=tools)
 
     def _make_task(self, key: str, agent: Agent, inputs: dict) -> Task:

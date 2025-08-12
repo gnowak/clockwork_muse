@@ -6,6 +6,31 @@ from datetime import datetime
 from pathlib import Path
 from clockwork_muse.crew import ContentCrew
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+def preflight_tools() -> None:
+    # Runs in the SAME process/env as the crew.
+    from crewai_tools import SerperDevTool, ScrapeWebsiteTool
+    import os
+
+    # Serper
+    if not os.getenv("SERPER_API_KEY"):
+        raise SystemExit("[ABORT] SERPER_API_KEY not set in this process.")
+    s = SerperDevTool()
+    q = "site:wikipedia.org test"
+    r = s.run(search_query=q)
+    if not r:
+        raise SystemExit("[ABORT] Serper returned empty response.")
+
+    # Scraper (be explicit about the param name)
+    w = ScrapeWebsiteTool()
+    out = None
+    try:
+        out = w.run(website_url="https://example.com")
+    except TypeError:
+        out = w.run(url="https://example.com")
+    if not isinstance(out, str) or len(out) < 100:
+        raise SystemExit("[ABORT] Scraper returned too little content.")
 
 
 def setup_logging(verbose: bool, debug: bool, log_file: str | None) -> None:
@@ -43,6 +68,7 @@ if __name__ == "__main__":
             "run_id": run_id,       # optional; used in paths below
         }
         print(f"\n=== Running topic: {t} ===")
+        preflight_tools()
         crew = ContentCrew().build(inputs, stage=args.stage)
         result = crew.kickoff(inputs=inputs)
         print(result)
