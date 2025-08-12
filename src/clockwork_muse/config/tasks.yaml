@@ -1,35 +1,77 @@
 trend_scan:
   description: >-
-    Analyze public interest signals and propose 5 promising subtopics per topic in {{ topics | join(', ') }}
-    with a one-sentence rationale each, noting recency or evergreen appeal. Output a single consolidated
-    list (max 300 words). Avoid speculation; rely on observable signals.
+    Use ONLY the Sources JSON provided below. Do NOT call tools. Do NOT invent links, titles, or dates.
+
+    Steps:
+    1) Parse the provided Sources (url/site/date/summary).
+    2) Cluster overlapping ideas; prefer angles supported by multiple distinct sources.
+    3) Rank by frequency across sources and recency (newer dates > older).
+    4) Produce **3–5 angles**:
+       - Prefer angles with ≥2 distinct evidence URLs.
+       - If total sources < 6 and you cannot reach 3 angles otherwise, allow up to **2** angles with a single
+         strong source, and set `"weak_evidence": true` on those items.
+
+    Output ONLY a fenced JSON block:
+    {
+      "topic": "{{ topic | default(topics[0]) }}",
+      "angles": [
+        {
+          "angle": "…",
+          "rationale": "1 sentence grounded in the sources",
+          "evidence": [
+            {"url":"https://...", "site":"example.com", "date":"YYYY-MM-DD or null", "title":"…"}
+          ],
+          "weak_evidence": false
+        }
+      ]
+    }
   expected_output: >-
-    Markdown section titled "Proposed Angles" with 5–15 bullet points across all topics, each with a
-    short rationale.
+    A single fenced JSON block (no prose). Return 3–5 angles. Mark any angle based on a single source as "weak_evidence": true.
   agent: trendhunter
+  context_from: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/research.md
   output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/trends.md
+
 
 web_research:
   description: >-
-    You MUST use the tools. First, call the Serper search tool with `search_query` built from:
-      "{{ topic | default(topics[0]) }} (tips OR guide OR how to OR best OR top)"
-      Exclude obvious junk: -("virtual tour" OR 360 OR VR OR promo) -site:pinterest.com -site:x.com
-      Then, for each candidate link (max 2 per domain), call the ScrapeWebsite tool to fetch the page
-      and extract: page_title, site_name (domain), and publication_date from meta tags
-      (article:published_time, og:updated_time, or visible date). If scraping fails, skip that link.
-      DO NOT invent URLs or dates. If Serper returns nothing usable, output "NO_SOURCES_FOUND".
+    You MUST use tools and you MAY NOT invent links, titles, or dates.
 
-      Finally, output ONLY a fenced JSON block with this schema:
-      {
-        "topic": "{{ topic | default(topics[0]) }}",
-        "sources": [
-          {"title":"...", "url":"...", "site":"...", "date":"YYYY-MM-DD or null", "summary":"..."}
-        ]
-      }
+    IMPORTANT: Each tool call takes a single key=value dictionary only.
+    Do NOT pass JSON arrays or multiple objects to tools. Call them separately.
+
+    Step 1 — Search (two separate calls):
+    Call **Serper** TWICE, as two separate actions, each with exactly one `search_query` string.
+
+    Call A:
+      search_query="{{ topic | default(topics[0]) }} (tips OR guide OR how to OR best OR top)
+      -vr -\"virtual reality\" -360 -\"360°\" -tour -\"virtual tour\" -promo
+      -site:pinterest.com -site:x.com -site:facebook.com -site:instagram.com -site:youtube.com"
+
+    Call B (recency bias):
+      search_query="{{ topic | default(topics[0]) }} (tips OR guide OR how to OR best)
+      (2024 OR 2025) -vr -\"virtual reality\" -360 -\"360°\" -tour -\"virtual tour\" -promo
+      -site:pinterest.com -site:x.com -site:facebook.com -site:instagram.com -site:youtube.com"
+
+    Merge results from A and B. Keep at most 2 URLs per domain.
+
+    Step 2 — Scrape:
+    For each kept URL, call **Scrape Website** with `website_url=\"https://...\"`.
+    Extract: page_title, site (domain), publication_date (from meta tags or visible text; else null), and a 1-sentence summary.
+    If scraping fails, SKIP that URL. Do NOT guess.
+
+    Step 3 — Output (JSON only):
+    Return ONLY a fenced JSON block:
+    {
+      "topic": "{{ topic | default(topics[0]) }}",
+      "sources": [
+        {"title":"...", "url":"https://...", "site":"example.com", "date":"YYYY-MM-DD or null", "summary":"1 sentence"}
+      ]
+    }
   expected_output: >-
-    A single fenced JSON block (no prose) matching the schema above, 4–8 sources total, max 2 per domain.
+    A single fenced JSON block (no prose). Include ONLY URLs you successfully scraped; max 2 per domain.
+    If nothing could be scraped, output the string "NO_SOURCES_FOUND".
   agent: researcher
-  output_file: outputs/{{ topic | lower | replace(' ', '_') }}/{{ run_id }}/research.md
+  output_file: outputs/{{ topic | lower | replace(' ','_') }}/{{ run_id }}/research.md
 
 outline:
   description: >-

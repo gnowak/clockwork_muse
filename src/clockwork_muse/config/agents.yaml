@@ -5,10 +5,13 @@ researcher:
   backstory: >-
     You are an efficient, source-driven researcher. You verify claims, prefer primary sources,
     and keep concise notes with links and publication dates. When calling Serper tool, pass the query as search_query and prefer “tips/guide/how to” phrasing.
-  max_execution_time: 3600   # seconds
-  max_iter: 1                # avoid agent looping
-  verbose: true
+    temperature: 0.2
+  max_tokens: 1200
+  max_iter: 2               # allow a second search pass if first was junk
+  max_execution_time: 600
   allow_delegation: false
+  # If supported by your stack/model, this helps:
+  #response_format: {"type": "json_object"}
 
 writer:
   role: Scriptwriter
@@ -34,7 +37,8 @@ trendhunter:
   role: Trend Hunter
   goal: Identify subtopics with sustained or rising interest related to {{ topics | join(', ') }}.
   backstory: Strategist who proposes a shortlist of angles likely to perform on {{ channels | join(', ') }}.
-  max_execution_time: 3600   # seconds
-  max_iter: 1                # avoid agent looping
-  verbose: true
+  temperature: 0.2
+  max_tokens: 1400
+  max_iter: 1
+  max_execution_time: 600
   allow_delegation: false

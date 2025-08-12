@@ -1,13 +1,14 @@
 # src/clockwork_muse/crew.py
 from __future__ import annotations
 import os, yaml
+import logging, time, json
 from pathlib import Path
+
 from jinja2 import Template
 from dotenv import load_dotenv, find_dotenv
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
-import logging
 LOG = logging.getLogger("clockwork_muse.crew")
 
 CFG_AGENTS = "src/clockwork_muse/config/agents.yaml"
@@ -34,20 +35,17 @@ class ContentCrew:
         # Tools for researcher
         self.serper  = SerperDevTool() if os.getenv("SERPER_API_KEY") else None
         self.scraper = ScrapeWebsiteTool()
-        # after self.serper/self.scraper are set:
-        LOG.warning(
-            "Tools wired: serper=%s scraper=%s | key=%s",
-            type(self.serper).__name__ if self.serper else None,
-            type(self.scraper).__name__ if self.scraper else None,
-            bool(os.getenv("SERPER_API_KEY"))
-)
+
+        self._tool_trace = []
+        self._tools_logdir = Path("logs/tools"); self._tools_logdir.mkdir(parents=True, exist_ok=True)
+
 
     def _make_agent(self, key: str) -> Agent:
         cfg = self.agents_cfg[key]
         tools = None
         if key == "researcher":
-            tools = [t for t in (self.serper, self.scraper) if t]
-            LOG.warning("Researcher attached tools: %s", [getattr(t, "name", t.__class__.__name__) for t in tools])
+            # Only allow scraping; remove Serper so the model can't fabricate “Used Serper”
+            tools = [t for t in (self.scraper,) if t]
         return Agent(config=cfg, tools=tools)
 
     def _make_task(self, key: str, agent: Agent, inputs: dict) -> Task:
@@ -55,8 +53,18 @@ class ContentCrew:
         desc = _render(cfg["description"], inputs)
         exp  = _render(cfg.get("expected_output", ""), inputs)
         out  = _render(cfg.get("output_file",""), inputs) or None  # <-- render with inputs
+
+        ctx_from = _render(cfg.get("context_from",""), inputs) if cfg.get("context_from") else None
+        if ctx_from:
+            try:
+                ctx_txt = Path(ctx_from).read_text(encoding="utf-8", errors="ignore")
+                desc = f"{desc}\n\n### Sources (from {ctx_from})\n{ctx_txt[:120000]}"
+            except Exception:
+                pass
+
         if out:
             Path(out).parent.mkdir(parents=True, exist_ok=True)
+
         return Task(description=desc, expected_output=exp, agent=agent, output_file=out)
 
     def build(self, inputs: dict, stage: str = "all") -> Crew:
@@ -67,14 +75,15 @@ class ContentCrew:
             "editor"     : self._make_agent("editor"),
         }
         stage_map = {
-            "all":      ["trend_scan","web_research","outline","script","edit_pass"],
-            "research": ["trend_scan","web_research"],
+            "all":      ["web_research", "trend_scan","outline","script","edit_pass"],
+            "research": ["web_research", "trend_scan"],
             "outline":  ["outline"],
             "script":   ["script"],
             "edit":     ["edit_pass"],
             "assets":   [],  # fill later
         }
         plan = stage_map.get(stage, stage_map["all"])
+
         tasks = []
         for name in plan:
             agent_key = self.tasks_cfg[name]["agent"]
